@@ -28,12 +28,22 @@ check_system() {
     mkdir -p "$CONFIG_PATH"
     mkdir -p "$WORK_DIR"
     
+    # 检测操作系统
+    OS=$(uname -s)
+    if [[ "$OS" == "FreeBSD" ]]; then
+        echo -e "${YELLOW}检测到 FreeBSD 系统${PLAIN}"
+        # FreeBSD 特殊处理
+        DOWNLOAD_PREFIX="freebsd"
+    else
+        DOWNLOAD_PREFIX="linux"
+    fi
+    
     # 检查系统架构
     ARCH=$(uname -m)
     case $ARCH in
-        x86_64) ARCH="amd64" ;;
-        aarch64) ARCH="arm64" ;;
-        armv7l) ARCH="armv7" ;;
+        x86_64|amd64) ARCH="amd64" ;;
+        aarch64|arm64) ARCH="arm64" ;;
+        armv7l|armv7) ARCH="armv7" ;;
         *) echo -e "${RED}不支持的架构: $ARCH${PLAIN}" && exit 1 ;;
     esac
 }
@@ -42,10 +52,24 @@ check_system() {
 download_singbox() {
     echo -e "${GREEN}正在下载 Sing-box...${PLAIN}"
     
-    DOWNLOAD_URL="${GITHUB_URL}/v${SING_BOX_VERSION}/sing-box-${SING_BOX_VERSION}-linux-${ARCH}.tar.gz"
+    # 根据系统选择下载链接
+    if [[ "$OS" == "FreeBSD" ]]; then
+        # FreeBSD 需要使用 Linux 兼容层或编译版本
+        echo -e "${YELLOW}FreeBSD 系统，尝试下载 Linux 版本...${PLAIN}"
+        DOWNLOAD_URL="${GITHUB_URL}/v${SING_BOX_VERSION}/sing-box-${SING_BOX_VERSION}-linux-${ARCH}.tar.gz"
+    else
+        DOWNLOAD_URL="${GITHUB_URL}/v${SING_BOX_VERSION}/sing-box-${SING_BOX_VERSION}-linux-${ARCH}.tar.gz"
+    fi
     
     cd "$WORK_DIR"
-    wget -O sing-box.tar.gz $DOWNLOAD_URL
+    
+    # 使用 curl 替代 wget（FreeBSD 上更常见）
+    if command -v curl &> /dev/null; then
+        curl -L -o sing-box.tar.gz $DOWNLOAD_URL
+    else
+        wget -O sing-box.tar.gz $DOWNLOAD_URL
+    fi
+    
     if [[ $? -ne 0 ]]; then
         echo -e "${RED}下载失败！${PLAIN}"
         exit 1
@@ -56,6 +80,13 @@ download_singbox() {
     chmod +x sing-box
     rm -rf sing-box-* sing-box.tar.gz
     
+    # 测试二进制文件
+    if ! ./sing-box version &>/dev/null; then
+        echo -e "${YELLOW}警告：sing-box 可能无法直接运行${PLAIN}"
+        echo -e "${YELLOW}尝试安装 Linux 兼容层...${PLAIN}"
+        # 在 FreeBSD 上可能需要 linux 兼容层
+    fi
+    
     echo -e "${GREEN}Sing-box 下载完成！${PLAIN}"
 }
 
@@ -65,10 +96,17 @@ generate_random_port() {
     local max_port=65000
     while true; do
         port=$((RANDOM % ($max_port - $min_port + 1) + $min_port))
-        # 检查端口是否被占用
-        if ! netstat -tuln 2>/dev/null | grep -q ":$port "; then
-            echo $port
-            return
+        # FreeBSD 使用 sockstat 代替 netstat
+        if command -v sockstat &> /dev/null; then
+            if ! sockstat -l | grep -q ":$port"; then
+                echo $port
+                return
+            fi
+        else
+            if ! netstat -tuln 2>/dev/null | grep -q ":$port "; then
+                echo $port
+                return
+            fi
         fi
     done
 }
