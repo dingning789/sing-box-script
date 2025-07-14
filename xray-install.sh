@@ -154,10 +154,17 @@ get_public_ip() {
 generate_reality_config() {
     local port=$(generate_random_port)
     local uuid=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen || echo "$(openssl rand -hex 16)-$(openssl rand -hex 16)")
-    local private_key=$(openssl rand -base64 32)
-    local public_key=$(echo "$private_key" | openssl dgst -sha256 -binary | openssl enc -base64)
-    local short_id=$(openssl rand -hex 8)
     local server_ip=$(get_public_ip)
+    
+    # 使用 xray 生成 reality 密钥对
+    echo -e "${GREEN}生成 Reality 密钥对...${PLAIN}"
+    cd "$WORK_DIR"
+    local keypair=$(./xray x25519)
+    local private_key=$(echo "$keypair" | grep "Private key:" | awk '{print $3}')
+    local public_key=$(echo "$keypair" | grep "Public key:" | awk '{print $3}')
+    
+    # 生成短ID
+    local short_id=$(openssl rand -hex 8)
     
     echo -e "${GREEN}生成 Reality 配置...${PLAIN}"
     echo -e "端口: ${YELLOW}$port${PLAIN}"
